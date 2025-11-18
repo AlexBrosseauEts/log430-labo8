@@ -29,13 +29,12 @@ class PaymentCreatedHandler(EventHandler):
                 order.payment_link = event_data.get("payment_link", "")
                 session.commit()
 
-            event_data['event'] = "SagaCompleted"
-            self.logger.debug(f"payment_link={event_data.get('payment_link', '')}")
+            event_data["event"] = "SagaCompleted"
             OrderEventProducer().get_instance().send(config.KAFKA_TOPIC, value=event_data)
         except Exception as e:
             session.rollback()
-            event_data['event'] = "PaymentCreationFailed"
-            event_data['error'] = str(e)
+            event_data["event"] = "PaymentCreationFailed"
+            event_data["error"] = str(e)
             OrderEventProducer().get_instance().send(config.KAFKA_TOPIC, value=event_data)
         finally:
             session.close()
