@@ -1,7 +1,7 @@
 # Labo 08 – Saga chorégraphiée, CQRS avec event broker, patron Outbox
 
 <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Ets_quebec_logo.png" width="250">    
-ÉTS - LOG430 - Architecture logicielle - Chargé de laboratoire : Gabriel C. Ullmann, Automne 2025.
+ÉTS - LOG430 - Architecture logicielle - Chargé de laboratoire : Gabriel C. Ullmann, Automne 2025
 
 ## 🎯 Objectifs d'apprentissage
 - Comprendre le fonctionnement d'une Saga chorégraphiée implémentée dans multiples microservices en utilisant Kafka en tant qu’event broker
