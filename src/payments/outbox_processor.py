@@ -58,16 +58,20 @@ class OutboxProcessor():
                     "on continue quand même pour le labo."
                 )
 
+            # On force un payment_id fixe pour le labo
             payment_id = 1
 
+            # Met à jour la table Outbox
             outbox_row = session.query(Outbox).filter(
                 Outbox.order_id == outbox_item.order_id
             ).first()
             if outbox_row:
                 outbox_row.payment_id = payment_id
 
+            # Met à jour la commande (is_paid + payment_id)
             update_succeeded = modify_order(event_data["order_id"], True, payment_id)
 
+            # Crée et stocke un vrai payment_link
             payment_link = f"http://api-gateway:8080/payments-api/payments/process/{payment_id}"
             event_data["payment_link"] = payment_link
 
@@ -96,9 +100,15 @@ class OutboxProcessor():
 
         finally:
             session.close()
-            OrderEventProducer().get_instance().send(
-                config.KAFKA_TOPIC, value=event_data
-            )
+            # 🔥 Nouveau : on évite que Kafka indisponible fasse crasher le container
+            try:
+                OrderEventProducer().get_instance().send(
+                    config.KAFKA_TOPIC, value=event_data
+                )
+            except Exception as e:
+                self.logger.debug(
+                    f"Erreur lors de l'envoi de l'événement Kafka: {e}"
+                )
 
     def _request_payment_transaction(self, outbox_item):
         """Request payment transaction to Payments API"""
