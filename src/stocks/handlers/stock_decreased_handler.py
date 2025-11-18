@@ -7,6 +7,9 @@ from typing import Dict, Any
 import config
 from event_management.base_handler import EventHandler
 from orders.commands.order_event_producer import OrderEventProducer
+from db import get_sqlalchemy_session
+from payments.outbox import Outbox
+from payments.outbox_processor import OutboxProcessor
 
 
 class StockDecreasedHandler(EventHandler):
@@ -17,22 +20,26 @@ class StockDecreasedHandler(EventHandler):
         super().__init__()
     
     def get_event_type(self) -> str:
-        """Get event type name"""
         return "StockDecreased"
     
     def handle(self, event_data: Dict[str, Any]) -> None:
-        """Execute every time the event is published"""
-        """
-        Ici, on suppose que la transaction de paiement a été créée
-        (ou sera créée par un autre service) et on poursuit la saga.
-        """
+        session = get_sqlalchemy_session()
         try:
-            # Si la transaction de paiement a été créée, déclenchez PaymentCreated.
-            event_data['event'] = "PaymentCreated"
-            self.logger.debug(f"payment_link={event_data.get('payment_link', 'no-link')}")
-            OrderEventProducer().get_instance().send(config.KAFKA_TOPIC, value=event_data)
+            new_outbox_item = Outbox(
+                order_id=event_data['order_id'],
+                user_id=event_data['user_id'],
+                total_amount=event_data['total_amount'],
+                order_items=event_data['order_items']
+            )
+            session.add(new_outbox_item)
+            session.flush()
+            session.commit()
+            OutboxProcessor().run(new_outbox_item)
         except Exception as e:
-            # Si la transaction de paiement n'était pas créée, déclenchez l'événement adéquat.
+            session.rollback()
+            self.logger.debug("La création d'une transaction de paiement a échoué : " + str(e))
             event_data['event'] = "PaymentCreationFailed"
             event_data['error'] = str(e)
             OrderEventProducer().get_instance().send(config.KAFKA_TOPIC, value=event_data)
+        finally:
+            session.close()
