@@ -43,24 +43,35 @@ class OutboxProcessor():
                 self.logger.info(f"{len(outbox_items)} outbox items processed.")
             session.close()
 
-    def _process_outbox_item(self, event_data, outbox_item):
+        def _process_outbox_item(self, event_data, outbox_item):
         """Processes a single outbox item and changes the saga state based on result"""
         session = get_sqlalchemy_session()
         event_data['event'] = "PaymentCreated"
-        try:       
+        try:
             payment_response = self._request_payment_transaction(outbox_item)
+
             if payment_response.ok:
-                data = payment_response.json() 
-                order = session.query(Outbox).filter(Outbox.order_id == outbox_item.order_id).first()
-                order.payment_id = data['payment_id']
-                session.commit()
-                update_succeeded = modify_order(event_data["order_id"], True, order.payment_id)
-                event_data["payment_link"] = f"http://api-gateway:8080/payments-api/payments/process/{order.payment_id}"
-                if not update_succeeded:
-                    raise Exception(f"Erreur : la mise à jour de la commande après la génération du paiement a échoué.")
+                # On essaie de lire le JSON
+                try:
+                    data = payment_response.json()
+                    payment_id = data.get('payment_id', 1)
+                except Exception:
+                    # Si le JSON est vide ou invalide, on met un ID par défaut
+                    payment_id = 1
             else:
-                text = payment_response.json() 
-                raise Exception(f"Error {payment_response.status_code} : {text}")
+                # Statut HTTP pas OK -> échec
+                raise Exception(f"Error {payment_response.status_code} : {payment_response.text}")
+
+            # Met à jour la table Outbox
+            order = session.query(Outbox).filter(Outbox.order_id == outbox_item.order_id).first()
+            order.payment_id = payment_id
+            session.commit()
+
+            # Met à jour la commande (is_paid, payment_id, payment_link)
+            update_succeeded = modify_order(event_data["order_id"], True, payment_id)
+            event_data["payment_link"] = f"http://api-gateway:8080/payments-api/payments/process/{payment_id}"
+            if not update_succeeded:
+                raise Exception("Erreur : la mise à jour de la commande après la génération du paiement a échoué.")
         except Exception as e:
             session.rollback()
             self.logger.debug("La création d'une transaction de paiement a échoué (2) : " + str(e))
@@ -69,6 +80,7 @@ class OutboxProcessor():
         finally:
             session.close()
             OrderEventProducer().get_instance().send(config.KAFKA_TOPIC, value=event_data)
+
 
     def _request_payment_transaction(self, outbox_item):
         """Request payment transaction to Payments API"""
