@@ -8,7 +8,7 @@ import config
 from event_management.base_handler import EventHandler
 from orders.commands.order_event_producer import OrderEventProducer
 from db import get_sqlalchemy_session
-from payments.outbox import Outbox
+from payments.models.outbox import Outbox
 from payments.outbox_processor import OutboxProcessor
 
 
