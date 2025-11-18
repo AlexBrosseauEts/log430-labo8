@@ -7,9 +7,7 @@ from typing import Dict, Any
 import config
 from event_management.base_handler import EventHandler
 from orders.commands.order_event_producer import OrderEventProducer
-from db import get_sqlalchemy_session
-from orders.models.order import Order
-
+from orders.commands.write_order import modify_order
 
 class PaymentCreatedHandler(EventHandler):
     """Handles PaymentCreated events"""
@@ -22,19 +20,15 @@ class PaymentCreatedHandler(EventHandler):
         return "PaymentCreated"
     
     def handle(self, event_data: Dict[str, Any]) -> None:
-        session = get_sqlalchemy_session()
-        try:
-            order = session.query(Order).filter(Order.id == event_data["order_id"]).first()
-            if order is not None:
-                order.payment_link = event_data.get("payment_link", "")
-                session.commit()
 
-            event_data["event"] = "SagaCompleted"
+        payment_id = event_data.get("payment_id", 0)
+        event_data["payment_link"] = f"http://api-gateway:8080/payments-api/payments/process/{payment_id}"
+        modify_order(event_data["order_id"], True, payment_id)
+
+        try:
+            event_data['event'] = "SagaCompleted"
+            self.logger.debug(f"payment_link={event_data['payment_link']}")
             OrderEventProducer().get_instance().send(config.KAFKA_TOPIC, value=event_data)
+
         except Exception as e:
-            session.rollback()
-            event_data["event"] = "PaymentCreationFailed"
-            event_data["error"] = str(e)
-            OrderEventProducer().get_instance().send(config.KAFKA_TOPIC, value=event_data)
-        finally:
-            session.close()
+            event_data['error'] = str(e)
