@@ -92,27 +92,25 @@ def add_order(user_id: int, items: list):
         OrderEventProducer().get_instance().send(config.KAFKA_TOPIC, value=event_data)
         session.close()
 
-def modify_order(order_id: int, is_paid: bool, payment_id: int):
+def modify_order(order_id: int, is_paid: bool, payment_link: str) -> bool:
     session = get_sqlalchemy_session()
     try:
         order = session.query(Order).filter(Order.id == order_id).first()
+        if not order:
+            logger.error(f"Order {order_id} not found")
+            return False
 
-        if order is not None and is_paid is not None:
-            order.is_paid = is_paid
-
-        if order is not None and payment_id is not None:
-            order.payment_link = f"http://api-gateway:8080/payments-api/payments/process/{payment_id}"
+        order.is_paid = is_paid
+        order.payment_link = payment_link
 
         session.commit()
-        session.refresh(order)
+        logger.debug(
+            f"Order {order_id} updated: is_paid={order.is_paid}, payment_link={order.payment_link}"
+        )
         return True
-    except SQLAlchemyError as e:
-        session.rollback()
-        print(e)
-        return False
     except Exception as e:
         session.rollback()
-        print(e)
+        logger.error(f"Error updating order {order_id}: {e}")
         return False
     finally:
         session.close()
